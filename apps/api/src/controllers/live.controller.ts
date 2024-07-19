@@ -19,7 +19,7 @@ export function getLiveEventInfo(key: string) {
   return key.split(':').slice(2) as [string, string];
 }
 
-export async function test(
+export async function testVisitors(
   req: FastifyRequest<{
     Params: {
       projectId: string;
@@ -28,19 +28,41 @@ export async function test(
   reply: FastifyReply
 ) {
   const events = await getEvents(
-    `SELECT * FROM events WHERE project_id = ${escape(req.params.projectId)} AND name = 'screen_view' LIMIT 500`
+    `SELECT * FROM events LIMIT 500`
+    // `SELECT * FROM events WHERE name = 'screen_view' LIMIT 500`
   );
   const event = events[Math.floor(Math.random() * events.length)];
   if (!event) {
     return reply.status(404).send('No event found');
   }
-  redisPub.publish('event', superjson.stringify(event));
+  event.projectId = req.params.projectId;
+  redisPub.publish('event:received', superjson.stringify(event));
   redis.set(
     `live:event:${event.projectId}:${Math.random() * 1000}`,
     '',
     'EX',
     10
   );
+  reply.status(202).send(event);
+}
+
+export async function testEvents(
+  req: FastifyRequest<{
+    Params: {
+      projectId: string;
+    };
+  }>,
+  reply: FastifyReply
+) {
+  const events = await getEvents(
+    `SELECT * FROM events LIMIT 500`
+    // `SELECT * FROM events WHERE name = 'screen_view' LIMIT 500`
+  );
+  const event = events[Math.floor(Math.random() * events.length)];
+  if (!event) {
+    return reply.status(404).send('No event found');
+  }
+  redisPub.publish('event:saved', superjson.stringify(event));
   reply.status(202).send(event);
 }
 
@@ -56,11 +78,11 @@ export function wsVisitors(
 ) {
   const { params } = req;
 
-  redisSub.subscribe('event');
+  redisSub.subscribe('event:received');
   redisSub.psubscribe('__key*:expired');
 
   const message = (channel: string, message: string) => {
-    if (channel === 'event') {
+    if (channel === 'event:received') {
       const event = getSuperJson<IServiceCreateEventPayload>(message);
       if (event?.projectId === params.projectId) {
         getLiveVisitors(params.projectId).then((count) => {
@@ -82,28 +104,10 @@ export function wsVisitors(
   redisSub.on('pmessage', pmessage);
 
   connection.socket.on('close', () => {
-    redisSub.unsubscribe('event');
+    redisSub.unsubscribe('event:saved');
     redisSub.punsubscribe('__key*:expired');
     redisSub.off('message', message);
     redisSub.off('pmessage', pmessage);
-  });
-}
-
-export function wsEvents(connection: { socket: WebSocket }) {
-  redisSub.subscribe('event');
-
-  const message = (channel: string, message: string) => {
-    const event = getSuperJson<IServiceCreateEventPayload>(message);
-    if (event) {
-      connection.socket.send(superjson.stringify(transformMinimalEvent(event)));
-    }
-  };
-
-  redisSub.on('message', message);
-
-  connection.socket.on('close', () => {
-    redisSub.unsubscribe('event');
-    redisSub.off('message', message);
   });
 }
 
@@ -117,11 +121,19 @@ export async function wsProjectEvents(
     };
     Querystring: {
       token?: string;
+      type?: string;
     };
   }>
 ) {
   const { params, query } = req;
   const { token } = query;
+  const type = query.type || 'saved';
+  if (!['saved', 'received'].includes(type)) {
+    connection.socket.send('Invalid type');
+    connection.socket.close();
+    return;
+  }
+  const subscribeToEvent = `event:${type}`;
   const decoded = validateClerkJwt(token);
   const userId = decoded?.sub;
   const access = await getProjectAccess({
@@ -129,7 +141,7 @@ export async function wsProjectEvents(
     projectId: params.projectId,
   });
 
-  redisSub.subscribe('event');
+  redisSub.subscribe(subscribeToEvent);
 
   const message = async (channel: string, message: string) => {
     const event = getSuperJson<IServiceCreateEventPayload>(message);
@@ -151,7 +163,7 @@ export async function wsProjectEvents(
   redisSub.on('message', message as any);
 
   connection.socket.on('close', () => {
-    redisSub.unsubscribe('event');
+    redisSub.unsubscribe(subscribeToEvent);
     redisSub.off('message', message as any);
   });
 }

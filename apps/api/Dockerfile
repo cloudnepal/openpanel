@@ -1,47 +1,15 @@
 # Dockerfile that builds the web app only
-
-FROM --platform=linux/amd64 node:20-slim AS base
+ARG NODE_VERSION=20.15.1
+FROM --platform=linux/amd64 node:${NODE_VERSION}-slim AS base
 
 ARG DATABASE_URL
 ENV DATABASE_URL=$DATABASE_URL
-
-ARG CLICKHOUSE_DB 
-ENV CLICKHOUSE_DB=$CLICKHOUSE_DB
-
-ARG CLICKHOUSE_PASSWORD 
-ENV CLICKHOUSE_PASSWORD=$CLICKHOUSE_PASSWORD
-
-ARG CLICKHOUSE_URL 
-ENV CLICKHOUSE_URL=$CLICKHOUSE_URL
-
-ARG CLICKHOUSE_USER 
-ENV CLICKHOUSE_USER=$CLICKHOUSE_USER
-
-ARG REDIS_URL
-ENV REDIS_URL=$REDIS_URL
-
-ARG NEXT_PUBLIC_DASHBOARD_URL
-ENV NEXT_PUBLIC_DASHBOARD_URL=$NEXT_PUBLIC_DASHBOARD_URL
-
-ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
-ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
-
-ARG CLERK_SECRET_KEY
-ENV CLERK_SECRET_KEY=$CLERK_SECRET_KEY
-
-ARG CLERK_PUBLIC_PEM_KEY
-ENV CLERK_PUBLIC_PEM_KEY=$CLERK_PUBLIC_PEM_KEY
-
-ARG SEVENTY_SEVEN_API_KEY
-ENV SEVENTY_SEVEN_API_KEY=$SEVENTY_SEVEN_API_KEY
 
 ENV PNPM_HOME="/pnpm"
 
 ENV PATH="$PNPM_HOME:$PATH"
 
 RUN corepack enable
-
-ARG NODE_VERSION=20
 
 RUN apt update \
     && apt install -y curl python3 make g++ \
@@ -65,6 +33,7 @@ COPY packages/common/package.json packages/common/package.json
 COPY packages/constants/package.json packages/constants/package.json
 COPY packages/validation/package.json packages/validation/package.json
 COPY packages/sdks/sdk/package.json packages/sdks/sdk/package.json
+COPY patches patches
 
 # BUILD
 FROM base AS build
@@ -73,7 +42,7 @@ WORKDIR /app/apps/api
 RUN pnpm install --frozen-lockfile
 
 WORKDIR  /app
-COPY apps apps
+COPY apps/api apps/api
 COPY packages packages
 COPY tooling tooling
 RUN pnpm db:codegen

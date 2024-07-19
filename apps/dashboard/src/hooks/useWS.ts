@@ -2,21 +2,42 @@
 
 import { use, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@clerk/nextjs';
+import debounce from 'lodash.debounce';
 import useWebSocket from 'react-use-websocket';
 
 import { getSuperJson } from '@openpanel/common';
 
-export default function useWS<T>(path: string, onMessage: (event: T) => void) {
+type UseWSOptions = {
+  debounce?: {
+    delay: number;
+  } & Parameters<typeof debounce>[2];
+};
+
+export default function useWS<T>(
+  path: string,
+  onMessage: (event: T) => void,
+  options?: UseWSOptions
+) {
   const auth = useAuth();
   const ws = String(process.env.NEXT_PUBLIC_API_URL)
     .replace(/^https/, 'wss')
     .replace(/^http/, 'ws');
   const [baseUrl, setBaseUrl] = useState(`${ws}${path}`);
   const [token, setToken] = useState<string | null>(null);
-  const socketUrl = useMemo(
-    () => (token ? `${baseUrl}?token=${token}` : baseUrl),
-    [baseUrl, token]
-  );
+  const socketUrl = useMemo(() => {
+    const parseUrl = new URL(baseUrl);
+    if (token) {
+      parseUrl.searchParams.set('token', token);
+    }
+    return parseUrl.toString();
+  }, [baseUrl, token]);
+
+  const debouncedOnMessage = useMemo(() => {
+    if (options?.debounce) {
+      return debounce(onMessage, options.debounce.delay, options.debounce);
+    }
+    return onMessage;
+  }, [options?.debounce?.delay]);
 
   useEffect(() => {
     if (auth.isSignedIn) {
@@ -35,7 +56,7 @@ export default function useWS<T>(path: string, onMessage: (event: T) => void) {
       try {
         const data = getSuperJson<T>(event.data);
         if (data) {
-          onMessage(data);
+          debouncedOnMessage(data);
         }
       } catch (error) {
         console.error('Error parsing message', error);

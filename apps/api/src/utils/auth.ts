@@ -5,15 +5,13 @@ import { verifyPassword } from '@openpanel/common';
 import type { Client, IServiceClient } from '@openpanel/db';
 import { ClientType, db } from '@openpanel/db';
 
-import { logger } from './logger';
-
 const cleanDomain = (domain: string) =>
   domain
     .replace('www.', '')
     .replace(/https?:\/\//, '')
     .replace(/\/$/, '');
 
-class SdkAuthError extends Error {
+export class SdkAuthError extends Error {
   payload: {
     clientId?: string;
     clientSecret?: string;
