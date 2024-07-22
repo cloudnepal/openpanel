@@ -1,12 +1,16 @@
 import { getReferrerWithQuery, parseReferrer } from '@/utils/parse-referrer';
 import { parseUserAgent } from '@/utils/parse-user-agent';
-import { isSameDomain, parsePath } from '@/utils/url';
 import type { Job } from 'bullmq';
 import { omit } from 'ramda';
 import { v4 as uuid } from 'uuid';
 
-import { getTime, toISOString } from '@openpanel/common';
-import type { IServiceCreateEventPayload } from '@openpanel/db';
+import {
+  getTime,
+  isSameDomain,
+  parsePath,
+  toISOString,
+} from '@openpanel/common';
+import type { IServiceCreateEventPayload, IServiceEvent } from '@openpanel/db';
 import { createEvent } from '@openpanel/db';
 import { getLastScreenViewFromProfileId } from '@openpanel/db/src/services/event.service';
 import { eventsQueue, findJobByPrefix, sessionsQueue } from '@openpanel/queue';
@@ -66,7 +70,7 @@ export async function incomingEvent(job: Job<EventsQueuePayloadIncomingEvent>) {
       projectId,
     });
 
-    const payload: Omit<IServiceCreateEventPayload, 'id'> = {
+    const payload: Omit<IServiceEvent, 'id'> = {
       name: body.name,
       deviceId: event?.deviceId || '',
       sessionId: event?.sessionId || '',
@@ -97,6 +101,7 @@ export async function incomingEvent(job: Job<EventsQueuePayloadIncomingEvent>) {
       referrerType: event?.referrerType ?? '',
       profile: undefined,
       meta: undefined,
+      importedAt: null,
     };
 
     return createEvent(payload);
@@ -141,7 +146,7 @@ export async function incomingEvent(job: Job<EventsQueuePayloadIncomingEvent>) {
     );
   }
 
-  const payload: Omit<IServiceCreateEventPayload, 'id'> = {
+  const payload: IServiceCreateEventPayload = {
     name: body.name,
     deviceId: sessionEndPayload.deviceId,
     sessionId: sessionEndPayload.sessionId,
@@ -170,8 +175,6 @@ export async function incomingEvent(job: Job<EventsQueuePayloadIncomingEvent>) {
     referrer: referrer?.url,
     referrerName: referrer?.name || utmReferrer?.name || '',
     referrerType: referrer?.type || utmReferrer?.type || '',
-    profile: undefined,
-    meta: undefined,
   };
 
   if (!sessionEnd) {

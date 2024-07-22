@@ -21,6 +21,13 @@ import { getEventFiltersWhereClause } from './chart.service';
 import { getProfiles, upsertProfile } from './profile.service';
 import type { IServiceProfile } from './profile.service';
 
+export type IImportedEvent = Omit<
+  IClickhouseEvent,
+  'properties' | 'profile' | 'meta' | 'imported_at'
+> & {
+  properties: Record<string, unknown>;
+};
+
 export interface IClickhouseEvent {
   id: string;
   name: string;
@@ -34,7 +41,7 @@ export interface IClickhouseEvent {
   referrer_name: string;
   referrer_type: string;
   duration: number;
-  properties: Record<string, string | number | boolean>;
+  properties: Record<string, string | number | boolean | undefined | null>;
   created_at: string;
   country: string;
   city: string;
@@ -48,15 +55,14 @@ export interface IClickhouseEvent {
   device: string;
   brand: string;
   model: string;
+  imported_at: string | null;
 
   // They do not exist here. Just make ts happy for now
   profile?: IServiceProfile;
   meta?: EventMeta;
 }
 
-export function transformEvent(
-  event: IClickhouseEvent
-): IServiceCreateEventPayload {
+export function transformEvent(event: IClickhouseEvent): IServiceEvent {
   return {
     id: event.id,
     name: event.name,
@@ -86,10 +92,16 @@ export function transformEvent(
     referrerType: event.referrer_type,
     profile: event.profile,
     meta: event.meta,
+    importedAt: event.imported_at ? new Date(event.imported_at) : null,
   };
 }
 
-export interface IServiceCreateEventPayload {
+export type IServiceCreateEventPayload = Omit<
+  IServiceEvent,
+  'id' | 'importedAt' | 'profile' | 'meta'
+>;
+
+export interface IServiceEvent {
   id: string;
   name: string;
   deviceId: string;
@@ -119,6 +131,7 @@ export interface IServiceCreateEventPayload {
   referrer: string | undefined;
   referrerName: string | undefined;
   referrerType: string | undefined;
+  importedAt: Date | null;
   profile: IServiceProfile | undefined;
   meta: EventMeta | undefined;
 }
@@ -159,7 +172,7 @@ function maskString(str: string, mask = '*') {
 }
 
 export function transformMinimalEvent(
-  event: IServiceCreateEventPayload
+  event: IServiceEvent
 ): IServiceEventMinimal {
   return {
     id: event.id,
@@ -191,7 +204,7 @@ export async function getLiveVisitors(projectId: string) {
 export async function getEvents(
   sql: string,
   options: GetEventsOptions = {}
-): Promise<IServiceCreateEventPayload[]> {
+): Promise<IServiceEvent[]> {
   const events = await chQuery<IClickhouseEvent>(sql);
   if (options.profile) {
     const ids = events.map((e) => e.profile_id);
@@ -220,9 +233,7 @@ export async function getEvents(
   return events.map(transformEvent);
 }
 
-export async function createEvent(
-  payload: Omit<IServiceCreateEventPayload, 'id'>
-) {
+export async function createEvent(payload: IServiceCreateEventPayload) {
   if (!payload.profileId) {
     payload.profileId = payload.deviceId;
   }
@@ -283,6 +294,7 @@ export async function createEvent(
     referrer: payload.referrer ?? '',
     referrer_name: payload.referrerName ?? '',
     referrer_type: payload.referrerType ?? '',
+    imported_at: null,
   };
 
   await eventBuffer.insert(event);
