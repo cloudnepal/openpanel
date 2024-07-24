@@ -56,6 +56,11 @@ export const ch = new Proxy(originalCh, {
               throw retryError; // Rethrow or handle as needed
             }
           } else {
+            if (args[0].query) {
+              console.log('FAILED QUERY:');
+              console.log(args[0].query);
+            }
+
             // Handle other errors or rethrow them
             throw error;
           }
@@ -105,8 +110,11 @@ export async function chQuery<T extends Record<string, any>>(
   return (await chQueryWithMeta<T>(query)).data;
 }
 
-export function formatClickhouseDate(_date: Date | string) {
+export function formatClickhouseDate(_date: Date | string, skipTime = false) {
   const date = typeof _date === 'string' ? new Date(_date) : _date;
+  if (skipTime) {
+    return date.toISOString().split('T')[0];
+  }
   return date.toISOString().replace('T', ' ').replace(/Z+$/, '');
 }
 
